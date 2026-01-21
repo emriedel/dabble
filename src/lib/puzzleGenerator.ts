@@ -196,9 +196,16 @@ function placeBonuses(
   return bonuses;
 }
 
-// Generate the letter set for a puzzle
+// Sort letters: vowels first (alphabetically), then consonants (alphabetically)
+function sortLetters(letters: string[]): string[] {
+  const vowels = letters.filter((l) => VOWELS.includes(l)).sort();
+  const consonants = letters.filter((l) => !VOWELS.includes(l)).sort();
+  return [...vowels, ...consonants];
+}
+
+// Generate the letter set for a puzzle (simulates drawing from a Scrabble bag)
 function generateLetters(rng: () => number): string[] {
-  // Create the letter pool
+  // Create the letter pool (like a Scrabble bag)
   const pool: string[] = [];
   for (const [letter, count] of Object.entries(LETTER_DISTRIBUTION)) {
     for (let i = 0; i < count; i++) {
@@ -206,31 +213,39 @@ function generateLetters(rng: () => number): string[] {
     }
   }
 
+  // Shuffle the pool
   const shuffledPool = shuffle(rng, pool);
-  const letters: string[] = [];
 
-  // First, ensure we have minimum vowels
-  let vowelCount = 0;
-  for (const letter of shuffledPool) {
-    if (letters.length >= PUZZLE_LETTER_COUNT) break;
+  // Draw letters from the bag
+  const drawn: string[] = [];
+  let poolIndex = 0;
 
-    if (VOWELS.includes(letter)) {
-      if (vowelCount < MIN_VOWELS || rng() < 0.5) {
-        letters.push(letter);
-        vowelCount++;
+  // First pass: draw letters, but ensure minimum vowels
+  while (drawn.length < PUZZLE_LETTER_COUNT && poolIndex < shuffledPool.length) {
+    const letter = shuffledPool[poolIndex++];
+    const currentVowels = drawn.filter((l) => VOWELS.includes(l)).length;
+    const remainingSlots = PUZZLE_LETTER_COUNT - drawn.length;
+    const vowelsNeeded = MIN_VOWELS - currentVowels;
+
+    // If we need vowels and this isn't one, check if we can skip it
+    if (vowelsNeeded > 0 && !VOWELS.includes(letter)) {
+      // Only skip if we have enough slots left to still get required vowels
+      if (remainingSlots > vowelsNeeded) {
+        // Skip this consonant, but don't lose it - we might need it later
+        continue;
       }
-    } else if (vowelCount >= MIN_VOWELS || letters.length < PUZZLE_LETTER_COUNT - (MIN_VOWELS - vowelCount)) {
-      letters.push(letter);
     }
+
+    drawn.push(letter);
   }
 
-  // Fill remaining slots if needed
-  while (letters.length < PUZZLE_LETTER_COUNT) {
-    const idx = Math.floor(rng() * shuffledPool.length);
-    letters.push(shuffledPool[idx]);
+  // If we still need more letters (unlikely), draw from remaining pool
+  while (drawn.length < PUZZLE_LETTER_COUNT && poolIndex < shuffledPool.length) {
+    drawn.push(shuffledPool[poolIndex++]);
   }
 
-  return shuffle(rng, letters);
+  // Sort: vowels first, then consonants, both alphabetically
+  return sortLetters(drawn);
 }
 
 // Generate a complete game board
