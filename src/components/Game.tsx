@@ -160,7 +160,7 @@ export function Game() {
     <div className="flex flex-col min-h-screen bg-neutral-900 text-white">
       {/* Header */}
       <header className="flex items-center justify-between px-4 py-3 bg-neutral-800">
-        <h1 className="text-xl font-bold tracking-tight">Lexicon</h1>
+        <h1 className="text-xl font-bold tracking-tight">Dabble</h1>
         <div className="text-right">
           <div className="text-2xl font-bold text-amber-400">{totalScore}</div>
           <div className="text-xs text-neutral-400">Score</div>

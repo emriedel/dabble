@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Lexicon - Daily Word Puzzle",
+  title: "Dabble - Daily Word Puzzle",
   description: "A daily Scrabble-style word puzzle. Score as high as you can with your letters!",
   keywords: ["word game", "puzzle", "scrabble", "daily game", "lexicon"],
 };

@@ -1,8 +1,8 @@
-# Lexicon - Daily Word Puzzle Game
+# Dabble - Daily Word Puzzle Game
 
 ## Project Overview
 
-Lexicon is a daily Scrabble-style word puzzle game where players receive a randomly-generated board with unique shapes and bonus squares, along with a set of letters. The goal is to score the highest possible Scrabble score using valid words.
+Dabble is a daily Scrabble-style word puzzle game where players receive a randomly-generated board with unique shapes and bonus squares, along with a set of letters. The goal is to score the highest possible Scrabble score using valid words.
 
 **Purpose:** Provide a quick, engaging daily word game experience similar to Wordle/Connections
 **Development Strategy:** Mobile-first web app, stateless (no login required)

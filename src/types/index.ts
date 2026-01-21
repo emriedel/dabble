@@ -1,4 +1,4 @@
-// Core game types for Lexicon
+// Core game types for Dabble
 
 export type BonusType = 'DL' | 'TL' | 'DW' | 'TW' | 'START' | null;
 

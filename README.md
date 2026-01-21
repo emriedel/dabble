@@ -1,4 +1,4 @@
-# Lexicon
+# Dabble
 
 A daily Scrabble-style word puzzle game. Every day, all players receive the same board and letters. Score as high as you can!
 

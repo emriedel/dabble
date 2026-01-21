@@ -1,4 +1,4 @@
-// Game configuration constants for Lexicon
+// Game configuration constants for Dabble
 // These can be adjusted to tune gameplay
 
 export const BOARD_SIZE = 9;

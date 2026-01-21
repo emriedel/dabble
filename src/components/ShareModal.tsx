@@ -23,7 +23,7 @@ export function ShareModal({ date, words, totalScore, onClose }: ShareModalProps
   // Generate share text
   const generateShareText = () => {
     const lines = [
-      `Lexicon ${displayDate}`,
+      `Dabble ${displayDate}`,
       `Score: ${totalScore}`,
       '',
       ...words.map((w) => `${w.word} (${w.score})`),
@@ -39,7 +39,7 @@ export function ShareModal({ date, words, totalScore, onClose }: ShareModalProps
     const blocks = '🟨'.repeat(scoreBlocks) + '⬛'.repeat(10 - scoreBlocks);
 
     const lines = [
-      `Lexicon ${displayDate}`,
+      `Dabble ${displayDate}`,
       `Score: ${totalScore} | ${words.length} words`,
       blocks,
       '',
@@ -72,7 +72,7 @@ export function ShareModal({ date, words, totalScore, onClose }: ShareModalProps
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `Lexicon ${displayDate}`,
+          title: `Dabble ${displayDate}`,
           text,
         });
       } catch {
