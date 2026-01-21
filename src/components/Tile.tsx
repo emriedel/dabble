@@ -11,7 +11,6 @@ interface TileProps {
   isPlaced?: boolean;
   isLocked?: boolean;
   onClick?: () => void;
-  size?: 'sm' | 'md';
 }
 
 export function Tile({
@@ -22,16 +21,10 @@ export function Tile({
   isPlaced = false,
   isLocked = false,
   onClick,
-  size = 'md',
 }: TileProps) {
   if (!isPlayable) {
     return (
-      <div
-        className={`
-          ${size === 'sm' ? 'w-7 h-7' : 'w-9 h-9'}
-          bg-neutral-900 rounded-sm
-        `}
-      />
+      <div className="aspect-square w-full bg-neutral-900 rounded-sm" />
     );
   }
 
@@ -44,7 +37,7 @@ export function Tile({
       onClick={onClick}
       disabled={isLocked && hasLetter}
       className={`
-        ${size === 'sm' ? 'w-7 h-7 text-sm' : 'w-9 h-9 text-base'}
+        aspect-square w-full text-sm sm:text-base
         rounded-sm font-bold relative flex items-center justify-center
         transition-all duration-100
         ${
@@ -65,12 +58,12 @@ export function Tile({
       {hasLetter ? (
         <>
           <span>{letter}</span>
-          <span className="absolute bottom-0.5 right-0.5 text-[8px] font-normal opacity-70">
+          <span className="absolute bottom-0.5 right-0.5 text-[7px] sm:text-[8px] font-normal opacity-70">
             {points}
           </span>
         </>
       ) : (
-        bonusStyle && <span className="text-[10px] font-semibold">{bonusStyle.label}</span>
+        bonusStyle && <span className="text-[9px] sm:text-[10px] font-semibold">{bonusStyle.label}</span>
       )}
     </button>
   );

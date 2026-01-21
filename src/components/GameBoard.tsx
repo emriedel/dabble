@@ -22,31 +22,32 @@ export function GameBoard({
   );
 
   return (
-    <div className="flex flex-col gap-0.5 p-2 bg-neutral-800 rounded-lg">
-      {board.cells.map((row, rowIndex) => (
-        <div key={rowIndex} className="flex gap-0.5">
-          {row.map((cell) => {
-            const key = `${cell.row},${cell.col}`;
-            const placedLetter = placedMap.get(key);
-            const isSelected =
-              selectedCell?.row === cell.row && selectedCell?.col === cell.col;
+    <div
+      className="grid gap-1 p-2 bg-neutral-800 rounded-lg w-full"
+      style={{
+        gridTemplateColumns: `repeat(${board.size}, 1fr)`,
+        maxWidth: '400px',
+      }}
+    >
+      {board.cells.flat().map((cell) => {
+        const key = `${cell.row},${cell.col}`;
+        const placedLetter = placedMap.get(key);
+        const isSelected =
+          selectedCell?.row === cell.row && selectedCell?.col === cell.col;
 
-            return (
-              <Tile
-                key={key}
-                letter={placedLetter || cell.letter}
-                bonus={cell.bonus}
-                isPlayable={cell.isPlayable}
-                isSelected={isSelected}
-                isPlaced={!!placedLetter}
-                isLocked={cell.isLocked}
-                onClick={() => onCellClick(cell.row, cell.col)}
-                size="sm"
-              />
-            );
-          })}
-        </div>
-      ))}
+        return (
+          <Tile
+            key={key}
+            letter={placedLetter || cell.letter}
+            bonus={cell.bonus}
+            isPlayable={cell.isPlayable}
+            isSelected={isSelected}
+            isPlaced={!!placedLetter}
+            isLocked={cell.isLocked}
+            onClick={() => onCellClick(cell.row, cell.col)}
+          />
+        );
+      })}
     </div>
   );
 }

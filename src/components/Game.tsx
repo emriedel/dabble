@@ -158,17 +158,18 @@ export function Game() {
 
   return (
     <div className="flex flex-col min-h-screen bg-neutral-900 text-white">
-      {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 bg-neutral-800">
-        <h1 className="text-xl font-bold tracking-tight">Dabble</h1>
-        <div className="text-right">
-          <div className="text-2xl font-bold text-amber-400">{totalScore}</div>
-          <div className="text-xs text-neutral-400">Score</div>
-        </div>
-      </header>
+      <div className="flex flex-col flex-1 w-full max-w-md mx-auto">
+        {/* Header */}
+        <header className="flex items-center justify-between px-4 py-3 bg-neutral-800">
+          <h1 className="text-xl font-bold tracking-tight">Dabble</h1>
+          <div className="text-right">
+            <div className="text-2xl font-bold text-amber-400">{totalScore}</div>
+            <div className="text-xs text-neutral-400">Score</div>
+          </div>
+        </header>
 
-      {/* Main game area */}
-      <main className="flex-1 flex flex-col items-center justify-center gap-4 p-4 overflow-hidden">
+        {/* Main game area */}
+        <main className="flex-1 flex flex-col items-center justify-center gap-4 p-2 overflow-hidden">
         {/* Game Board */}
         <GameBoard
           board={board}
@@ -221,20 +222,21 @@ export function Game() {
         </div>
       </main>
 
-      {/* Footer with word list and finish button */}
-      <footer className="px-4 pb-4 pt-2">
-        <WordList words={submittedWords} />
-        {submittedWords.length > 0 && (
-          <button
-            onClick={handleFinish}
-            className="w-full mt-3 py-3 px-4 rounded-lg font-bold text-base
-              bg-amber-500 text-neutral-900 hover:bg-amber-400
-              transition-colors"
-          >
-            Finish & Share
-          </button>
-        )}
-      </footer>
+        {/* Footer with word list and finish button */}
+        <footer className="px-4 pb-4 pt-2">
+          <WordList words={submittedWords} />
+          {submittedWords.length > 0 && (
+            <button
+              onClick={handleFinish}
+              className="w-full mt-3 py-3 px-4 rounded-lg font-bold text-base
+                bg-amber-500 text-neutral-900 hover:bg-amber-400
+                transition-colors"
+            >
+              Finish & Share
+            </button>
+          )}
+        </footer>
+      </div>
 
       {/* Share Modal */}
       {showShareModal && (
