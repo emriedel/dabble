@@ -21,11 +21,35 @@ export const LETTER_DISTRIBUTION: Record<string, number> = {
 };
 
 // How many letters to give the player each puzzle
-export const PUZZLE_LETTER_COUNT = 12;
+export const PUZZLE_LETTER_COUNT = 14;
 
 // Minimum number of vowels to ensure playability
-export const MIN_VOWELS = 3;
+export const MIN_VOWELS = 4;
 export const VOWELS = ['A', 'E', 'I', 'O', 'U'];
+
+// Letter constraints for playability
+export const LETTER_CONSTRAINTS = {
+  totalLetters: 14,
+  minVowels: 4,
+  maxVowels: 6,
+  minUniqueLetters: 10,       // At least 10 different letters
+  maxDuplicatesPerLetter: 2,  // No letter more than twice
+};
+
+// Common 2-letter words for playability check
+export const COMMON_2_LETTER_WORDS = [
+  'AN', 'AT', 'BE', 'DO', 'GO', 'HE', 'IF', 'IN', 'IS', 'IT',
+  'ME', 'NO', 'OF', 'ON', 'OR', 'SO', 'TO', 'UP', 'WE', 'BY',
+  'MY', 'AM', 'AS', 'AH', 'AW', 'OX', 'OH', 'OW', 'US', 'UM',
+];
+
+// Common 3-letter words for playability check
+export const COMMON_3_LETTER_WORDS = [
+  'THE', 'AND', 'FOR', 'ARE', 'BUT', 'NOT', 'ALL', 'CAN', 'HER', 'WAS',
+  'ONE', 'OUT', 'DAY', 'HAD', 'HAS', 'HOW', 'NEW', 'NOW', 'OLD', 'SEE',
+  'WAY', 'MAY', 'SAY', 'SHE', 'TWO', 'GET', 'HIM', 'HIS', 'OUR', 'TOO',
+  'ANY', 'MAN', 'BIG', 'RUN', 'SET', 'PUT', 'END', 'FAR', 'TOP', 'TEN',
+];
 
 // Board generation parameters
 export const BOARD_CONFIG = {
@@ -40,6 +64,20 @@ export const BOARD_CONFIG = {
     DW: 4,  // Double Word
     TW: 2,  // Triple Word
   },
+};
+
+// Board symmetry configuration
+export const BOARD_SYMMETRY = {
+  type: '180' as const,       // 180-degree rotational symmetry
+  centerProtectionRadius: 2,  // Cells within 2 of center always playable
+};
+
+// Bonus placement configuration - strategic placement rules
+export const BONUS_PLACEMENT = {
+  TW: { edgePreference: 0.9, minDistFromCenter: 3, allowAdjacent: false },
+  DW: { edgePreference: 0.6, minDistFromCenter: 2, allowAdjacent: false },
+  TL: { edgePreference: 0.4, minDistFromCenter: 1, allowAdjacent: true },
+  DL: { edgePreference: 0.3, minDistFromCenter: 0, allowAdjacent: true },
 };
 
 // Bonus multipliers

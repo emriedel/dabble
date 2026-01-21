@@ -92,7 +92,7 @@ export function RackTile({
       onClick={onClick}
       disabled={disabled}
       className={`
-        w-11 h-11 rounded-md font-bold text-lg relative flex items-center justify-center
+        w-10 h-10 sm:w-11 sm:h-11 rounded-md font-bold text-base sm:text-lg relative flex items-center justify-center
         transition-all duration-100
         ${
           isLocked
@@ -106,7 +106,7 @@ export function RackTile({
       `}
     >
       <span>{letter}</span>
-      <span className="absolute bottom-0.5 right-1 text-[9px] font-normal opacity-70">
+      <span className="absolute bottom-0.5 right-1 text-[8px] sm:text-[9px] font-normal opacity-70">
         {points}
       </span>
     </button>

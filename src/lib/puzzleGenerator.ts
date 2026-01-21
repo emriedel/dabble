@@ -3,9 +3,12 @@ import {
   BOARD_SIZE,
   BOARD_CONFIG,
   LETTER_DISTRIBUTION,
-  PUZZLE_LETTER_COUNT,
-  MIN_VOWELS,
   VOWELS,
+  LETTER_CONSTRAINTS,
+  COMMON_2_LETTER_WORDS,
+  COMMON_3_LETTER_WORDS,
+  BOARD_SYMMETRY,
+  BONUS_PLACEMENT,
 } from '@/constants/gameConfig';
 import type { GameBoard, Cell, BonusType, DailyPuzzle } from '@/types';
 
@@ -48,7 +51,19 @@ function getNeighbors(row: number, col: number, size: number): [number, number][
   return neighbors;
 }
 
-// Generate the board shape with dead spaces
+// Get the 180° rotated position of a cell
+function getRotatedPosition(r: number, c: number, size: number): [number, number] {
+  return [size - 1 - r, size - 1 - c];
+}
+
+// Check if a cell is in the "first half" (for 180° symmetry, only generate in upper-left)
+function isInFirstHalf(r: number, c: number, size: number): boolean {
+  const center = Math.floor(size / 2);
+  // Consider cells where r < center, or r == center and c < center
+  return r < center || (r === center && c < center);
+}
+
+// Generate the board shape with 180° rotational symmetry
 function generateBoardShape(rng: () => number, size: number): boolean[][] {
   const playable: boolean[][] = Array(size)
     .fill(null)
@@ -62,69 +77,89 @@ function generateBoardShape(rng: () => number, size: number): boolean[][] {
   );
   const targetDead = totalCells - targetPlayable;
 
-  // Start with all playable, then carve out dead spaces from edges/corners
+  const centerR = Math.floor(size / 2);
+  const centerC = Math.floor(size / 2);
+  const protectionRadius = BOARD_SYMMETRY.centerProtectionRadius;
+
+  // Manhattan distance from center
+  const distFromCenter = (r: number, c: number) =>
+    Math.abs(r - centerR) + Math.abs(c - centerC);
+
+  // Collect potential dead space seed points (only in first half for symmetry)
+  const seedPoints: [number, number][] = [];
+
+  // Corners (only upper-left quadrant corners)
+  if (rng() < 0.8) seedPoints.push([0, 0]);
+  if (rng() < 0.6) seedPoints.push([0, size - 1]);
+  if (rng() < 0.6) seedPoints.push([size - 1, 0]);
+
+  // Edge points in first half
+  for (let i = 1; i < size - 1; i++) {
+    if (isInFirstHalf(0, i, size) && rng() < 0.25) seedPoints.push([0, i]);
+    if (isInFirstHalf(i, 0, size) && rng() < 0.25) seedPoints.push([i, 0]);
+    if (isInFirstHalf(size - 1, i, size) && rng() < 0.25) seedPoints.push([size - 1, i]);
+    if (isInFirstHalf(i, size - 1, size) && rng() < 0.25) seedPoints.push([i, size - 1]);
+  }
+
+  const shuffledSeeds = shuffle(rng, seedPoints);
   let deadCount = 0;
 
-  // Create organic dead space patterns by growing from corners/edges
-  const startPoints: [number, number][] = [];
+  // Grow dead spaces from seed points, always applying symmetry
+  for (const [sr, sc] of shuffledSeeds) {
+    if (deadCount >= targetDead / 2) break; // Half the target since we mirror
 
-  // Add corners and some edge points as potential dead space seeds
-  const corners: [number, number][] = [
-    [0, 0], [0, size - 1], [size - 1, 0], [size - 1, size - 1],
-  ];
+    // Skip if in protected center area
+    if (distFromCenter(sr, sc) < protectionRadius) continue;
+    if (!playable[sr][sc]) continue;
 
-  for (const corner of corners) {
-    if (rng() < 0.7) {
-      startPoints.push(corner);
-    }
-  }
+    // BFS to grow a small cluster (1-3 cells)
+    const clusterSize = randInt(rng, 1, 3);
+    const cluster: [number, number][] = [[sr, sc]];
+    const visited = new Set<string>();
+    visited.add(`${sr},${sc}`);
 
-  // Add some random edge points
-  for (let i = 0; i < size; i++) {
-    if (rng() < 0.3) startPoints.push([0, i]);
-    if (rng() < 0.3) startPoints.push([size - 1, i]);
-    if (rng() < 0.3) startPoints.push([i, 0]);
-    if (rng() < 0.3) startPoints.push([i, size - 1]);
-  }
-
-  // Grow dead spaces from start points
-  const shuffledStarts = shuffle(rng, startPoints);
-
-  for (const [sr, sc] of shuffledStarts) {
-    if (deadCount >= targetDead) break;
-
-    // BFS to grow dead region
     const queue: [number, number][] = [[sr, sc]];
-    const maxGrowth = randInt(rng, 2, 6);
-    let grown = 0;
 
-    while (queue.length > 0 && grown < maxGrowth && deadCount < targetDead) {
+    while (queue.length > 0 && cluster.length < clusterSize) {
       const [r, c] = queue.shift()!;
 
-      if (!playable[r][c]) continue;
-
-      // Don't make center area dead
-      const distFromCenter = Math.abs(r - Math.floor(size / 2)) + Math.abs(c - Math.floor(size / 2));
-      if (distFromCenter < 2) continue;
-
-      playable[r][c] = false;
-      deadCount++;
-      grown++;
-
-      // Add neighbors to queue with some probability
       for (const [nr, nc] of getNeighbors(r, c, size)) {
-        if (playable[nr][nc] && rng() < 0.5) {
+        const key = `${nr},${nc}`;
+        if (visited.has(key)) continue;
+        visited.add(key);
+
+        // Skip protected center area
+        if (distFromCenter(nr, nc) < protectionRadius) continue;
+        if (!playable[nr][nc]) continue;
+        // Only add cells in first half (symmetry maintained via mirroring later)
+        if (!isInFirstHalf(nr, nc, size) && !(nr === centerR && nc === centerC)) continue;
+
+        if (rng() < 0.4) {
+          cluster.push([nr, nc]);
           queue.push([nr, nc]);
+        }
+      }
+    }
+
+    // Apply cluster and its symmetric mirror
+    for (const [r, c] of cluster) {
+      if (distFromCenter(r, c) >= protectionRadius && playable[r][c]) {
+        playable[r][c] = false;
+        deadCount++;
+
+        // Mirror to 180° rotated position
+        const [mr, mc] = getRotatedPosition(r, c, size);
+        if (mr !== r || mc !== c) { // Don't double-count center
+          if (playable[mr][mc] && distFromCenter(mr, mc) >= protectionRadius) {
+            playable[mr][mc] = false;
+            deadCount++;
+          }
         }
       }
     }
   }
 
   // Ensure the board is connected (all playable cells reachable from center)
-  const centerR = Math.floor(size / 2);
-  const centerC = Math.floor(size / 2);
-
-  // BFS from center to find all reachable cells
   const visited: boolean[][] = Array(size)
     .fill(null)
     .map(() => Array(size).fill(false));
@@ -142,11 +177,15 @@ function generateBoardShape(rng: () => number, size: number): boolean[][] {
     }
   }
 
-  // Mark unreachable playable cells as dead
+  // Mark unreachable playable cells as dead (and their symmetric counterparts)
   for (let r = 0; r < size; r++) {
     for (let c = 0; c < size; c++) {
       if (playable[r][c] && !visited[r][c]) {
         playable[r][c] = false;
+        const [mr, mc] = getRotatedPosition(r, c, size);
+        if (mr !== r || mc !== c) {
+          playable[mr][mc] = false;
+        }
       }
     }
   }
@@ -154,7 +193,42 @@ function generateBoardShape(rng: () => number, size: number): boolean[][] {
   return playable;
 }
 
-// Place bonus squares on the board
+// Calculate edge distance (how close to the edge of playable area)
+function getEdgeDistance(r: number, c: number, size: number): number {
+  const distTop = r;
+  const distBottom = size - 1 - r;
+  const distLeft = c;
+  const distRight = size - 1 - c;
+  return Math.min(distTop, distBottom, distLeft, distRight);
+}
+
+// Check if any adjacent cell has a bonus
+function hasAdjacentBonus(r: number, c: number, bonuses: BonusType[][], size: number): boolean {
+  for (const [nr, nc] of getNeighbors(r, c, size)) {
+    if (bonuses[nr][nc] !== null) return true;
+  }
+  return false;
+}
+
+// Score a position for bonus placement based on preferences
+function scorePosition(
+  r: number,
+  c: number,
+  size: number,
+  centerR: number,
+  centerC: number,
+  edgePreference: number
+): number {
+  const edgeDist = getEdgeDistance(r, c, size);
+  const maxEdgeDist = Math.floor(size / 2);
+
+  // Score based on edge preference (higher edgePreference = prefer edges)
+  // edgeDist 0 = on edge, edgeDist max = near center
+  const normalizedEdge = 1 - edgeDist / maxEdgeDist;
+  return normalizedEdge * edgePreference + (1 - normalizedEdge) * (1 - edgePreference);
+}
+
+// Place bonus squares on the board with strategic placement and symmetry
 function placeBonuses(
   rng: () => number,
   playable: boolean[][],
@@ -164,32 +238,95 @@ function placeBonuses(
     .fill(null)
     .map(() => Array(size).fill(null));
 
-  // Place start square in center
   const centerR = Math.floor(size / 2);
   const centerC = Math.floor(size / 2);
+
+  // Place start square in center
   bonuses[centerR][centerC] = 'START';
 
-  // Get all playable positions (excluding center)
-  const positions: [number, number][] = [];
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
-      if (playable[r][c] && !(r === centerR && c === centerC)) {
+  // Manhattan distance from center
+  const distFromCenter = (r: number, c: number) =>
+    Math.abs(r - centerR) + Math.abs(c - centerC);
+
+  // Get valid positions for bonus placement (only first half for symmetry)
+  const getValidPositions = (bonusType: keyof typeof BONUS_PLACEMENT): [number, number][] => {
+    const config = BONUS_PLACEMENT[bonusType];
+    const positions: [number, number][] = [];
+
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c < size; c++) {
+        // Skip non-playable, center, or already assigned
+        if (!playable[r][c]) continue;
+        if (r === centerR && c === centerC) continue;
+        if (bonuses[r][c] !== null) continue;
+
+        // Only consider first half for symmetric placement
+        if (!isInFirstHalf(r, c, size)) continue;
+
+        // Check minimum distance from center
+        if (distFromCenter(r, c) < config.minDistFromCenter) continue;
+
+        // Check adjacent bonus constraint
+        if (!config.allowAdjacent && hasAdjacentBonus(r, c, bonuses, size)) continue;
+
+        // Also check that the mirrored position is valid
+        const [mr, mc] = getRotatedPosition(r, c, size);
+        if (!playable[mr][mc]) continue;
+        if (bonuses[mr][mc] !== null) continue;
+        if (!config.allowAdjacent && hasAdjacentBonus(mr, mc, bonuses, size)) continue;
+
         positions.push([r, c]);
       }
     }
-  }
 
-  const shuffledPositions = shuffle(rng, positions);
-  let posIndex = 0;
+    return positions;
+  };
 
-  // Place bonus squares
-  const bonusTypes: BonusType[] = ['TW', 'DW', 'TL', 'DL'];
+  // Place bonuses in order: TW → DW → TL → DL (rarest first)
+  const bonusTypes: (keyof typeof BONUS_PLACEMENT)[] = ['TW', 'DW', 'TL', 'DL'];
 
   for (const bonusType of bonusTypes) {
-    const count = BOARD_CONFIG.bonusCounts[bonusType as keyof typeof BOARD_CONFIG.bonusCounts];
-    for (let i = 0; i < count && posIndex < shuffledPositions.length; i++) {
-      const [r, c] = shuffledPositions[posIndex++];
+    const config = BONUS_PLACEMENT[bonusType];
+    const count = BOARD_CONFIG.bonusCounts[bonusType];
+    // We place in pairs (symmetric), so we need count/2 positions
+    const pairsNeeded = Math.ceil(count / 2);
+
+    for (let i = 0; i < pairsNeeded; i++) {
+      const validPositions = getValidPositions(bonusType);
+      if (validPositions.length === 0) break;
+
+      // Score positions and select based on preference
+      const scoredPositions = validPositions.map(([r, c]) => ({
+        pos: [r, c] as [number, number],
+        score: scorePosition(r, c, size, centerR, centerC, config.edgePreference),
+      }));
+
+      // Sort by score (descending) and add some randomness
+      scoredPositions.sort((a, b) => b.score - a.score);
+
+      // Pick from top candidates with weighted random selection
+      const topN = Math.min(5, scoredPositions.length);
+      const weights = scoredPositions.slice(0, topN).map((p, idx) => Math.pow(0.6, idx));
+      const totalWeight = weights.reduce((a, b) => a + b, 0);
+
+      let pick = rng() * totalWeight;
+      let selectedIdx = 0;
+      for (let j = 0; j < weights.length; j++) {
+        pick -= weights[j];
+        if (pick <= 0) {
+          selectedIdx = j;
+          break;
+        }
+      }
+
+      const [r, c] = scoredPositions[selectedIdx].pos;
       bonuses[r][c] = bonusType;
+
+      // Place symmetric counterpart
+      const [mr, mc] = getRotatedPosition(r, c, size);
+      if (mr !== r || mc !== c) {
+        bonuses[mr][mc] = bonusType;
+      }
     }
   }
 
@@ -203,49 +340,133 @@ function sortLetters(letters: string[]): string[] {
   return [...vowels, ...consonants];
 }
 
-// Generate the letter set for a puzzle (simulates drawing from a Scrabble bag)
+// Check if a set of letters can form a given word
+function canFormWord(letters: string[], word: string): boolean {
+  const available = [...letters];
+  for (const char of word) {
+    const idx = available.indexOf(char);
+    if (idx === -1) return false;
+    available.splice(idx, 1);
+  }
+  return true;
+}
+
+// Count how many words from a list can be formed with given letters
+function countFormableWords(letters: string[], wordList: string[]): number {
+  return wordList.filter(word => canFormWord(letters, word)).length;
+}
+
+// Check if letters meet playability requirements
+function isPlayable(letters: string[]): boolean {
+  const twoLetterCount = countFormableWords(letters, COMMON_2_LETTER_WORDS);
+  const threeLetterCount = countFormableWords(letters, COMMON_3_LETTER_WORDS);
+  return twoLetterCount >= 3 && threeLetterCount >= 2;
+}
+
+// Check if letters meet all constraints
+function meetsConstraints(letters: string[]): boolean {
+  const { minVowels, maxVowels, minUniqueLetters, maxDuplicatesPerLetter, totalLetters } = LETTER_CONSTRAINTS;
+
+  if (letters.length !== totalLetters) return false;
+
+  // Check vowel count
+  const vowelCount = letters.filter(l => VOWELS.includes(l)).length;
+  if (vowelCount < minVowels || vowelCount > maxVowels) return false;
+
+  // Check unique letters
+  const uniqueLetters = new Set(letters);
+  if (uniqueLetters.size < minUniqueLetters) return false;
+
+  // Check max duplicates per letter
+  const letterCounts = new Map<string, number>();
+  for (const letter of letters) {
+    const count = (letterCounts.get(letter) || 0) + 1;
+    if (count > maxDuplicatesPerLetter) return false;
+    letterCounts.set(letter, count);
+  }
+
+  return true;
+}
+
+// Generate the letter set for a puzzle with constraint-based drawing
 function generateLetters(rng: () => number): string[] {
-  // Create the letter pool (like a Scrabble bag)
-  const pool: string[] = [];
+  const { totalLetters, minVowels, maxVowels, maxDuplicatesPerLetter } = LETTER_CONSTRAINTS;
+
+  // Create separate vowel and consonant pools
+  const vowelPool: string[] = [];
+  const consonantPool: string[] = [];
+
   for (const [letter, count] of Object.entries(LETTER_DISTRIBUTION)) {
+    const pool = VOWELS.includes(letter) ? vowelPool : consonantPool;
     for (let i = 0; i < count; i++) {
       pool.push(letter);
     }
   }
 
-  // Shuffle the pool
-  const shuffledPool = shuffle(rng, pool);
+  const maxAttempts = 50;
 
-  // Draw letters from the bag
-  const drawn: string[] = [];
-  let poolIndex = 0;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const shuffledVowels = shuffle(rng, [...vowelPool]);
+    const shuffledConsonants = shuffle(rng, [...consonantPool]);
 
-  // First pass: draw letters, but ensure minimum vowels
-  while (drawn.length < PUZZLE_LETTER_COUNT && poolIndex < shuffledPool.length) {
-    const letter = shuffledPool[poolIndex++];
-    const currentVowels = drawn.filter((l) => VOWELS.includes(l)).length;
-    const remainingSlots = PUZZLE_LETTER_COUNT - drawn.length;
-    const vowelsNeeded = MIN_VOWELS - currentVowels;
+    const drawn: string[] = [];
+    const letterCounts = new Map<string, number>();
 
-    // If we need vowels and this isn't one, check if we can skip it
-    if (vowelsNeeded > 0 && !VOWELS.includes(letter)) {
-      // Only skip if we have enough slots left to still get required vowels
-      if (remainingSlots > vowelsNeeded) {
-        // Skip this consonant, but don't lose it - we might need it later
-        continue;
+    // Decide how many vowels (between minVowels and maxVowels)
+    const targetVowels = randInt(rng, minVowels, maxVowels);
+    const targetConsonants = totalLetters - targetVowels;
+
+    // Draw vowels
+    let vowelIdx = 0;
+    while (drawn.filter(l => VOWELS.includes(l)).length < targetVowels && vowelIdx < shuffledVowels.length) {
+      const letter = shuffledVowels[vowelIdx++];
+      const count = letterCounts.get(letter) || 0;
+      if (count < maxDuplicatesPerLetter) {
+        drawn.push(letter);
+        letterCounts.set(letter, count + 1);
       }
     }
 
-    drawn.push(letter);
+    // Draw consonants
+    let consonantIdx = 0;
+    while (drawn.filter(l => !VOWELS.includes(l)).length < targetConsonants && consonantIdx < shuffledConsonants.length) {
+      const letter = shuffledConsonants[consonantIdx++];
+      const count = letterCounts.get(letter) || 0;
+      if (count < maxDuplicatesPerLetter) {
+        drawn.push(letter);
+        letterCounts.set(letter, count + 1);
+      }
+    }
+
+    // Fill any remaining slots if needed
+    const allRemaining = shuffle(rng, [...shuffledVowels.slice(vowelIdx), ...shuffledConsonants.slice(consonantIdx)]);
+    let remainingIdx = 0;
+    while (drawn.length < totalLetters && remainingIdx < allRemaining.length) {
+      const letter = allRemaining[remainingIdx++];
+      const count = letterCounts.get(letter) || 0;
+      if (count < maxDuplicatesPerLetter) {
+        drawn.push(letter);
+        letterCounts.set(letter, count + 1);
+      }
+    }
+
+    // Check constraints and playability
+    if (meetsConstraints(drawn) && isPlayable(drawn)) {
+      return sortLetters(drawn);
+    }
   }
 
-  // If we still need more letters (unlikely), draw from remaining pool
-  while (drawn.length < PUZZLE_LETTER_COUNT && poolIndex < shuffledPool.length) {
-    drawn.push(shuffledPool[poolIndex++]);
-  }
+  // Fallback: pre-validated letter sets that are known to be playable
+  const fallbackSets = [
+    ['A', 'E', 'I', 'O', 'U', 'B', 'C', 'D', 'G', 'L', 'N', 'R', 'S', 'T'],
+    ['A', 'E', 'I', 'O', 'C', 'D', 'F', 'H', 'L', 'M', 'N', 'R', 'S', 'T'],
+    ['A', 'E', 'I', 'U', 'B', 'D', 'G', 'K', 'L', 'N', 'P', 'R', 'S', 'T'],
+    ['A', 'E', 'O', 'U', 'C', 'D', 'H', 'L', 'M', 'N', 'P', 'R', 'S', 'W'],
+    ['A', 'E', 'I', 'O', 'B', 'D', 'F', 'G', 'L', 'N', 'R', 'S', 'T', 'Y'],
+  ];
 
-  // Sort: vowels first, then consonants, both alphabetically
-  return sortLetters(drawn);
+  const fallbackIdx = Math.floor(rng() * fallbackSets.length);
+  return sortLetters(shuffle(rng, fallbackSets[fallbackIdx]));
 }
 
 // Generate a complete game board
