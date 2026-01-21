@@ -7,10 +7,12 @@ interface ShareModalProps {
   date: string;
   words: Word[];
   totalScore: number;
+  allLettersUsed: boolean;
+  allLettersBonus: number;
   onClose: () => void;
 }
 
-export function ShareModal({ date, words, totalScore, onClose }: ShareModalProps) {
+export function ShareModal({ date, words, totalScore, allLettersUsed, allLettersBonus, onClose }: ShareModalProps) {
   const [copied, setCopied] = useState(false);
 
   // Format date for display
@@ -24,9 +26,10 @@ export function ShareModal({ date, words, totalScore, onClose }: ShareModalProps
   const generateShareText = () => {
     const lines = [
       `Dabble ${displayDate}`,
-      `Score: ${totalScore}`,
+      `Score: ${totalScore}${allLettersUsed ? ' (includes +' + allLettersBonus + ' bonus!)' : ''}`,
       '',
       ...words.map((w) => `${w.word} (${w.score})`),
+      ...(allLettersUsed ? [`All letters bonus (+${allLettersBonus})`] : []),
       '',
       'Play at: [URL]', // Replace with actual URL when deployed
     ];
@@ -40,7 +43,7 @@ export function ShareModal({ date, words, totalScore, onClose }: ShareModalProps
 
     const lines = [
       `Dabble ${displayDate}`,
-      `Score: ${totalScore} | ${words.length} words`,
+      `Score: ${totalScore} | ${words.length} words${allLettersUsed ? ' | All letters used!' : ''}`,
       blocks,
       '',
       'Play at: [URL]',
@@ -99,6 +102,11 @@ export function ShareModal({ date, words, totalScore, onClose }: ShareModalProps
           <div className="text-neutral-400">
             {words.length} word{words.length !== 1 ? 's' : ''}
           </div>
+          {allLettersUsed && (
+            <div className="mt-2 text-green-400 font-semibold">
+              All letters used! +{allLettersBonus} bonus
+            </div>
+          )}
         </div>
 
         {/* Word breakdown */}

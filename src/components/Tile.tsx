@@ -72,23 +72,33 @@ export function Tile({
 interface RackTileProps {
   letter: string;
   isSelected?: boolean;
-  isUsed?: boolean;
+  isUsed?: boolean;    // Currently placed on board (can be removed)
+  isLocked?: boolean;  // Permanently used (cannot be removed)
   onClick?: () => void;
 }
 
-export function RackTile({ letter, isSelected = false, isUsed = false, onClick }: RackTileProps) {
+export function RackTile({
+  letter,
+  isSelected = false,
+  isUsed = false,
+  isLocked = false,
+  onClick
+}: RackTileProps) {
   const points = LETTER_POINTS[letter] || 0;
+  const disabled = isUsed || isLocked;
 
   return (
     <button
       onClick={onClick}
-      disabled={isUsed}
+      disabled={disabled}
       className={`
         w-11 h-11 rounded-md font-bold text-lg relative flex items-center justify-center
         transition-all duration-100
         ${
-          isUsed
-            ? 'bg-neutral-800 text-neutral-600 cursor-default'
+          isLocked
+            ? 'bg-neutral-900 text-neutral-700 cursor-default opacity-40'
+            : isUsed
+            ? 'bg-neutral-700 text-neutral-500 cursor-default'
             : isSelected
             ? 'bg-amber-300 text-amber-900 ring-2 ring-white scale-110 -translate-y-1'
             : 'bg-amber-100 text-amber-900 hover:bg-amber-200 active:scale-95'

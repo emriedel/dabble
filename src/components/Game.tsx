@@ -10,12 +10,16 @@ import { loadDictionary } from '@/lib/dictionary';
 import { validatePlacement, applyPlacement } from '@/lib/gameLogic';
 import type { DailyPuzzle, GameBoard as GameBoardType, PlacedTile, Word } from '@/types';
 
+// Bonus for using all letters in the puzzle
+const ALL_LETTERS_BONUS = 50;
+
 export function Game() {
   const [puzzle, setPuzzle] = useState<DailyPuzzle | null>(null);
   const [board, setBoard] = useState<GameBoardType | null>(null);
   const [rackLetters, setRackLetters] = useState<string[]>([]);
   const [placedTiles, setPlacedTiles] = useState<PlacedTile[]>([]);
-  const [usedRackIndices, setUsedRackIndices] = useState<Set<number>>(new Set());
+  const [usedRackIndices, setUsedRackIndices] = useState<Set<number>>(new Set()); // Currently placed (not yet submitted)
+  const [lockedRackIndices, setLockedRackIndices] = useState<Set<number>>(new Set()); // Permanently used (submitted)
   const [selectedRackIndex, setSelectedRackIndex] = useState<number | null>(null);
   const [selectedCell, setSelectedCell] = useState<{ row: number; col: number } | null>(null);
   const [submittedWords, setSubmittedWords] = useState<Word[]>([]);
@@ -39,7 +43,8 @@ export function Game() {
 
   // Handle rack letter selection
   const handleRackClick = useCallback((index: number) => {
-    if (usedRackIndices.has(index)) return;
+    // Can't select if already used (placed or locked)
+    if (usedRackIndices.has(index) || lockedRackIndices.has(index)) return;
 
     if (selectedRackIndex === index) {
       setSelectedRackIndex(null);
@@ -47,7 +52,7 @@ export function Game() {
       setSelectedRackIndex(index);
     }
     setError(null);
-  }, [selectedRackIndex, usedRackIndices]);
+  }, [selectedRackIndex, usedRackIndices, lockedRackIndices]);
 
   // Handle board cell click
   const handleCellClick = useCallback((row: number, col: number) => {
@@ -120,13 +125,28 @@ export function Game() {
     const newBoard = applyPlacement(board, placedTiles);
     setBoard(newBoard);
 
+    // Lock the used rack indices (permanently consume those letters)
+    const newLockedIndices = new Set([...lockedRackIndices, ...usedRackIndices]);
+    setLockedRackIndices(newLockedIndices);
+
+    // Check if all letters are now used
+    const allLettersUsed = newLockedIndices.size === rackLetters.length;
+    const bonus = allLettersUsed ? ALL_LETTERS_BONUS : 0;
+
     // Update game state
     setSubmittedWords((prev) => [...prev, ...result.words]);
-    setTotalScore((prev) => prev + result.totalScore);
+    setTotalScore((prev) => prev + result.totalScore + bonus);
     setPlacedTiles([]);
     setUsedRackIndices(new Set());
-    setError(null);
-  }, [board, placedTiles, submittedWords.length]);
+    setError(allLettersUsed ? null : null);
+
+    // Show bonus message briefly
+    if (allLettersUsed) {
+      setError(`All letters used! +${ALL_LETTERS_BONUS} bonus!`);
+    } else {
+      setError(null);
+    }
+  }, [board, placedTiles, submittedWords.length, lockedRackIndices, usedRackIndices, rackLetters.length]);
 
   // Clear current placement
   const handleClear = useCallback(() => {
@@ -154,7 +174,7 @@ export function Game() {
     );
   }
 
-  const unusedLetterCount = rackLetters.length - usedRackIndices.size;
+  const availableLetterCount = rackLetters.length - lockedRackIndices.size - usedRackIndices.size;
 
   return (
     <div className="flex flex-col min-h-screen bg-neutral-900 text-white">
@@ -189,6 +209,7 @@ export function Game() {
         <LetterRack
           letters={rackLetters}
           usedIndices={usedRackIndices}
+          lockedIndices={lockedRackIndices}
           selectedIndex={selectedRackIndex}
           onLetterClick={handleRackClick}
         />
@@ -218,7 +239,7 @@ export function Game() {
         {/* Status info */}
         <div className="flex gap-4 text-sm text-neutral-400">
           <span>{submittedWords.length} words</span>
-          <span>{unusedLetterCount} letters left</span>
+          <span>{availableLetterCount} letters left</span>
         </div>
       </main>
 
@@ -244,6 +265,8 @@ export function Game() {
           date={puzzle.date}
           words={submittedWords}
           totalScore={totalScore}
+          allLettersUsed={lockedRackIndices.size === rackLetters.length}
+          allLettersBonus={ALL_LETTERS_BONUS}
           onClose={() => setShowShareModal(false)}
         />
       )}
