@@ -15,6 +15,7 @@ export interface PlacedTile {
   row: number;
   col: number;
   letter: string;
+  rackIndex?: number; // Track which rack letter this came from (optional for submitted words)
 }
 
 export interface Word {
@@ -58,3 +59,8 @@ export interface LetterTile {
   letter: string;
   points: number;
 }
+
+// Drag-and-drop data for tiles
+export type DragData =
+  | { type: 'rack-tile'; letter: string; rackIndex: number }
+  | { type: 'board-tile'; letter: string; row: number; col: number; rackIndex: number };

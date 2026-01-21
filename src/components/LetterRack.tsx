@@ -1,6 +1,6 @@
 'use client';
 
-import { RackTile } from './Tile';
+import { DraggableRackTile } from './Tile';
 
 interface LetterRackProps {
   letters: string[];
@@ -20,9 +20,10 @@ export function LetterRack({
   return (
     <div className="flex flex-wrap gap-1.5 justify-center p-3 bg-neutral-800 rounded-lg max-w-full">
       {letters.map((letter, index) => (
-        <RackTile
+        <DraggableRackTile
           key={index}
           letter={letter}
+          index={index}
           isSelected={selectedIndex === index}
           isUsed={usedIndices.has(index)}
           isLocked={lockedIndices.has(index)}
