@@ -37,6 +37,7 @@ export interface DailyPuzzle {
   board: GameBoard;
   letters: string[];
   seed: number;
+  archetype?: string; // Board archetype used for generation (debug info)
 }
 
 export interface GameState {

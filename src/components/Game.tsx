@@ -16,7 +16,8 @@ import { LetterRack } from './LetterRack';
 import { WordList } from './WordList';
 import { ShareModal } from './ShareModal';
 import { DragOverlayTile } from './Tile';
-import { generateDailyPuzzle, getTodayDateString } from '@/lib/puzzleGenerator';
+import { useSearchParams } from 'next/navigation';
+import { generateDailyPuzzle, generateRandomPuzzle } from '@/lib/puzzleGenerator';
 import { loadDictionary } from '@/lib/dictionary';
 import { validatePlacement, applyPlacement } from '@/lib/gameLogic';
 import type { DailyPuzzle, GameBoard as GameBoardType, PlacedTile, Word, DragData } from '@/types';
@@ -25,6 +26,9 @@ import type { DailyPuzzle, GameBoard as GameBoardType, PlacedTile, Word, DragDat
 const ALL_LETTERS_BONUS = 50;
 
 export function Game() {
+  const searchParams = useSearchParams();
+  const debugMode = searchParams.get('debug') === 'true';
+
   const [puzzle, setPuzzle] = useState<DailyPuzzle | null>(null);
   const [board, setBoard] = useState<GameBoardType | null>(null);
   const [rackLetters, setRackLetters] = useState<string[]>([]);
@@ -66,6 +70,13 @@ export function Game() {
     }
     init();
   }, []);
+
+  // Log puzzle archetype in debug mode
+  useEffect(() => {
+    if (debugMode && puzzle?.archetype) {
+      console.log(`[Dabble Debug] Board archetype: ${puzzle.archetype}`);
+    }
+  }, [debugMode, puzzle]);
 
   // Handle rack letter selection
   const handleRackClick = useCallback((index: number) => {
@@ -188,6 +199,22 @@ export function Game() {
     setShowShareModal(true);
   }, [submittedWords.length]);
 
+  // Generate a new random puzzle (debug mode only)
+  const handleNewPuzzle = useCallback(() => {
+    const newPuzzle = generateRandomPuzzle();
+    setPuzzle(newPuzzle);
+    setBoard(newPuzzle.board);
+    setRackLetters(newPuzzle.letters);
+    setPlacedTiles([]);
+    setUsedRackIndices(new Set());
+    setLockedRackIndices(new Set());
+    setSelectedRackIndex(null);
+    setSelectedCell(null);
+    setSubmittedWords([]);
+    setTotalScore(0);
+    setError(null);
+  }, []);
+
   // Handle drag start
   const handleDragStart = useCallback((event: DragStartEvent) => {
     const data = event.active.data.current as DragData;
@@ -264,7 +291,17 @@ export function Game() {
         <div className="flex flex-col flex-1 w-full max-w-md mx-auto">
           {/* Header */}
           <header className="flex items-center justify-between px-4 py-3 bg-neutral-800">
-            <h1 className="text-xl font-bold tracking-tight">Dabble</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-xl font-bold tracking-tight">Dabble</h1>
+              {debugMode && (
+                <button
+                  onClick={handleNewPuzzle}
+                  className="px-2 py-1 text-xs font-medium rounded bg-purple-600 hover:bg-purple-500 transition-colors"
+                >
+                  New Puzzle
+                </button>
+              )}
+            </div>
             <div className="text-right">
               <div className="text-2xl font-bold text-amber-400">{totalScore}</div>
               <div className="text-xs text-neutral-400">Score</div>

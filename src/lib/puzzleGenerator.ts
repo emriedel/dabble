@@ -7,9 +7,14 @@ import {
   LETTER_CONSTRAINTS,
   COMMON_2_LETTER_WORDS,
   COMMON_3_LETTER_WORDS,
+  COMMON_LONG_WORDS,
   BOARD_SYMMETRY,
   BONUS_PLACEMENT,
+  BOARD_ARCHETYPES,
+  DIFFICULT_LETTERS,
+  DIFFICULT_LETTER_RULES,
 } from '@/constants/gameConfig';
+import type { BoardArchetype } from '@/constants/gameConfig';
 import type { GameBoard, Cell, BonusType, DailyPuzzle } from '@/types';
 
 // Create a seeded random number generator for a given date
@@ -63,8 +68,53 @@ function isInFirstHalf(r: number, c: number, size: number): boolean {
   return r < center || (r === center && c < center);
 }
 
-// Generate the board shape with 180° rotational symmetry
-function generateBoardShape(rng: () => number, size: number): boolean[][] {
+// Manhattan distance from center
+function distFromCenter(r: number, c: number, size: number): number {
+  const centerR = Math.floor(size / 2);
+  const centerC = Math.floor(size / 2);
+  return Math.abs(r - centerR) + Math.abs(c - centerC);
+}
+
+// Ensure board connectivity from center using BFS, marking unreachable cells as dead
+function ensureConnectivity(playable: boolean[][], size: number): void {
+  const centerR = Math.floor(size / 2);
+  const centerC = Math.floor(size / 2);
+
+  const visited: boolean[][] = Array(size)
+    .fill(null)
+    .map(() => Array(size).fill(false));
+
+  const queue: [number, number][] = [[centerR, centerC]];
+  visited[centerR][centerC] = true;
+
+  while (queue.length > 0) {
+    const [r, c] = queue.shift()!;
+    for (const [nr, nc] of getNeighbors(r, c, size)) {
+      if (playable[nr][nc] && !visited[nr][nc]) {
+        visited[nr][nc] = true;
+        queue.push([nr, nc]);
+      }
+    }
+  }
+
+  // Mark unreachable playable cells as dead (and their symmetric counterparts)
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      if (playable[r][c] && !visited[r][c]) {
+        playable[r][c] = false;
+        const [mr, mc] = getRotatedPosition(r, c, size);
+        if (mr !== r || mc !== c) {
+          playable[mr][mc] = false;
+        }
+      }
+    }
+  }
+}
+
+// ============ BOARD ARCHETYPE GENERATORS ============
+
+// Classic archetype: Traditional edges-only dead spaces (original algorithm)
+function generateClassicBoard(rng: () => number, size: number): boolean[][] {
   const playable: boolean[][] = Array(size)
     .fill(null)
     .map(() => Array(size).fill(true));
@@ -77,13 +127,7 @@ function generateBoardShape(rng: () => number, size: number): boolean[][] {
   );
   const targetDead = totalCells - targetPlayable;
 
-  const centerR = Math.floor(size / 2);
-  const centerC = Math.floor(size / 2);
   const protectionRadius = BOARD_SYMMETRY.centerProtectionRadius;
-
-  // Manhattan distance from center
-  const distFromCenter = (r: number, c: number) =>
-    Math.abs(r - centerR) + Math.abs(c - centerC);
 
   // Collect potential dead space seed points (only in first half for symmetry)
   const seedPoints: [number, number][] = [];
@@ -106,13 +150,11 @@ function generateBoardShape(rng: () => number, size: number): boolean[][] {
 
   // Grow dead spaces from seed points, always applying symmetry
   for (const [sr, sc] of shuffledSeeds) {
-    if (deadCount >= targetDead / 2) break; // Half the target since we mirror
+    if (deadCount >= targetDead / 2) break;
 
-    // Skip if in protected center area
-    if (distFromCenter(sr, sc) < protectionRadius) continue;
+    if (distFromCenter(sr, sc, size) < protectionRadius) continue;
     if (!playable[sr][sc]) continue;
 
-    // BFS to grow a small cluster (1-3 cells)
     const clusterSize = randInt(rng, 1, 3);
     const cluster: [number, number][] = [[sr, sc]];
     const visited = new Set<string>();
@@ -128,10 +170,10 @@ function generateBoardShape(rng: () => number, size: number): boolean[][] {
         if (visited.has(key)) continue;
         visited.add(key);
 
-        // Skip protected center area
-        if (distFromCenter(nr, nc) < protectionRadius) continue;
+        if (distFromCenter(nr, nc, size) < protectionRadius) continue;
         if (!playable[nr][nc]) continue;
-        // Only add cells in first half (symmetry maintained via mirroring later)
+        const centerR = Math.floor(size / 2);
+        const centerC = Math.floor(size / 2);
         if (!isInFirstHalf(nr, nc, size) && !(nr === centerR && nc === centerC)) continue;
 
         if (rng() < 0.4) {
@@ -141,16 +183,14 @@ function generateBoardShape(rng: () => number, size: number): boolean[][] {
       }
     }
 
-    // Apply cluster and its symmetric mirror
     for (const [r, c] of cluster) {
-      if (distFromCenter(r, c) >= protectionRadius && playable[r][c]) {
+      if (distFromCenter(r, c, size) >= protectionRadius && playable[r][c]) {
         playable[r][c] = false;
         deadCount++;
 
-        // Mirror to 180° rotated position
         const [mr, mc] = getRotatedPosition(r, c, size);
-        if (mr !== r || mc !== c) { // Don't double-count center
-          if (playable[mr][mc] && distFromCenter(mr, mc) >= protectionRadius) {
+        if (mr !== r || mc !== c) {
+          if (playable[mr][mc] && distFromCenter(mr, mc, size) >= protectionRadius) {
             playable[mr][mc] = false;
             deadCount++;
           }
@@ -159,29 +199,158 @@ function generateBoardShape(rng: () => number, size: number): boolean[][] {
     }
   }
 
-  // Ensure the board is connected (all playable cells reachable from center)
-  const visited: boolean[][] = Array(size)
+  ensureConnectivity(playable, size);
+  return playable;
+}
+
+// Corridor archetype: Narrow central pathways created by dead space channels
+function generateCorridorBoard(rng: () => number, size: number): boolean[][] {
+  const playable: boolean[][] = Array(size)
     .fill(null)
-    .map(() => Array(size).fill(false));
+    .map(() => Array(size).fill(true));
 
-  const reachQueue: [number, number][] = [[centerR, centerC]];
-  visited[centerR][centerC] = true;
+  const protectionRadius = BOARD_SYMMETRY.centerProtectionRadius;
+  const center = Math.floor(size / 2);
 
-  while (reachQueue.length > 0) {
-    const [r, c] = reachQueue.shift()!;
-    for (const [nr, nc] of getNeighbors(r, c, size)) {
-      if (playable[nr][nc] && !visited[nr][nc]) {
-        visited[nr][nc] = true;
-        reachQueue.push([nr, nc]);
+  // Create horizontal or vertical corridors by adding dead rows/columns
+  const isHorizontal = rng() < 0.5;
+
+  // Select 1-2 positions for corridor walls (offset from center)
+  const wallPositions: number[] = [];
+  const offset1 = randInt(rng, 1, 2);
+  wallPositions.push(center - offset1);
+  wallPositions.push(center + offset1);
+
+  // Optionally add another wall pair
+  if (rng() < 0.4) {
+    const offset2 = randInt(rng, 3, Math.floor(size / 2) - 1);
+    if (offset2 !== offset1) {
+      wallPositions.push(center - offset2);
+      wallPositions.push(center + offset2);
+    }
+  }
+
+  for (const pos of wallPositions) {
+    if (pos < 0 || pos >= size) continue;
+
+    // Create partial walls with gaps for the corridor
+    for (let i = 0; i < size; i++) {
+      const r = isHorizontal ? pos : i;
+      const c = isHorizontal ? i : pos;
+
+      // Skip center protection area
+      if (distFromCenter(r, c, size) < protectionRadius) continue;
+
+      // Leave gaps at edges and random positions
+      const edgeDist = Math.min(i, size - 1 - i);
+      if (edgeDist < 2) continue; // Keep edges open
+      if (rng() < 0.3) continue; // Random gaps
+
+      playable[r][c] = false;
+
+      // Apply 180° symmetry
+      const [mr, mc] = getRotatedPosition(r, c, size);
+      if (mr !== r || mc !== c) {
+        playable[mr][mc] = false;
       }
     }
   }
 
-  // Mark unreachable playable cells as dead (and their symmetric counterparts)
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
-      if (playable[r][c] && !visited[r][c]) {
+  // Add corner dead spaces
+  const cornerSize = randInt(rng, 1, 2);
+  for (let r = 0; r < cornerSize; r++) {
+    for (let c = 0; c < cornerSize - r; c++) {
+      playable[r][c] = false;
+      playable[r][size - 1 - c] = false;
+      playable[size - 1 - r][c] = false;
+      playable[size - 1 - r][size - 1 - c] = false;
+    }
+  }
+
+  ensureConnectivity(playable, size);
+  return playable;
+}
+
+// Islands archetype: Board divided by thin channels creating connected regions
+function generateIslandsBoard(rng: () => number, size: number): boolean[][] {
+  const playable: boolean[][] = Array(size)
+    .fill(null)
+    .map(() => Array(size).fill(true));
+
+  const protectionRadius = BOARD_SYMMETRY.centerProtectionRadius;
+  const center = Math.floor(size / 2);
+
+  // Create thin channels (1 cell wide) that divide the board
+  // Choose channel pattern
+  const pattern = rng() < 0.5 ? 'plus' : 'corners';
+
+  if (pattern === 'plus') {
+    // Create a + shaped channel through the board (avoiding center)
+    // Horizontal channel at a random row offset from center
+    const hOffset = rng() < 0.5 ? -3 : 3;
+    const hRow = center + hOffset;
+
+    if (hRow >= 0 && hRow < size) {
+      for (let c = 0; c < size; c++) {
+        // Leave gaps for connectivity
+        if (c === 0 || c === size - 1 || c === center) continue;
+        if (rng() < 0.3) continue; // Random gaps
+        playable[hRow][c] = false;
+        // Symmetric row
+        const symRow = center - hOffset;
+        if (symRow >= 0 && symRow < size && symRow !== hRow) {
+          playable[symRow][c] = false;
+        }
+      }
+    }
+
+    // Vertical channel at a random col offset from center
+    const vOffset = rng() < 0.5 ? -3 : 3;
+    const vCol = center + vOffset;
+
+    if (vCol >= 0 && vCol < size) {
+      for (let r = 0; r < size; r++) {
+        if (r === 0 || r === size - 1 || r === center) continue;
+        if (rng() < 0.3) continue;
+        playable[r][vCol] = false;
+        const symCol = center - vOffset;
+        if (symCol >= 0 && symCol < size && symCol !== vCol) {
+          playable[r][symCol] = false;
+        }
+      }
+    }
+  } else {
+    // Create L-shaped dead zones in corners, leaving center open
+    const armLength = randInt(rng, 2, 3);
+
+    // Process each corner
+    const corners = [[0, 0], [0, size-1], [size-1, 0], [size-1, size-1]];
+    for (const [cornerR, cornerC] of corners) {
+      // Create small L-shape extending from corner
+      for (let i = 1; i <= armLength; i++) {
+        // Horizontal arm
+        const hc = cornerC === 0 ? i : size - 1 - i;
+        if (hc >= 0 && hc < size && distFromCenter(cornerR, hc, size) >= protectionRadius) {
+          if (rng() < 0.7) playable[cornerR][hc] = false;
+        }
+        // Vertical arm
+        const vr = cornerR === 0 ? i : size - 1 - i;
+        if (vr >= 0 && vr < size && distFromCenter(vr, cornerC, size) >= protectionRadius) {
+          if (rng() < 0.7) playable[vr][cornerC] = false;
+        }
+      }
+      // Corner itself
+      playable[cornerR][cornerC] = false;
+    }
+
+    // Add a few scattered interior dead cells for variety
+    const scatterCount = randInt(rng, 2, 4);
+    for (let i = 0; i < scatterCount; i++) {
+      const r = randInt(rng, 2, size - 3);
+      const c = randInt(rng, 2, size - 3);
+      if (distFromCenter(r, c, size) >= protectionRadius && playable[r][c]) {
         playable[r][c] = false;
+        // Apply symmetry
         const [mr, mc] = getRotatedPosition(r, c, size);
         if (mr !== r || mc !== c) {
           playable[mr][mc] = false;
@@ -190,7 +359,231 @@ function generateBoardShape(rng: () => number, size: number): boolean[][] {
     }
   }
 
+  ensureConnectivity(playable, size);
   return playable;
+}
+
+// Diagonal archetype: Diamond-shaped playable area
+function generateDiagonalBoard(rng: () => number, size: number): boolean[][] {
+  const playable: boolean[][] = Array(size)
+    .fill(null)
+    .map(() => Array(size).fill(true));
+
+  const protectionRadius = BOARD_SYMMETRY.centerProtectionRadius;
+  const center = Math.floor(size / 2);
+
+  // Create dead spaces in corners to form diamond shape
+  const diamondMargin = randInt(rng, 2, 3);
+
+  for (let r = 0; r < size; r++) {
+    for (let c = 0; c < size; c++) {
+      // Distance from center using Chebyshev distance (max of row/col dist)
+      const rowDist = Math.abs(r - center);
+      const colDist = Math.abs(c - center);
+
+      // Use Manhattan distance for diamond shape
+      const manhattanDist = rowDist + colDist;
+
+      // Cells far from center in diamond shape become dead
+      if (manhattanDist > center + diamondMargin - 1) {
+        // Add some randomness to edges
+        if (manhattanDist === center + diamondMargin && rng() < 0.5) continue;
+
+        playable[r][c] = false;
+      }
+    }
+  }
+
+  // Add small random dead patches along diagonals
+  const diagonalPatches = randInt(rng, 1, 3);
+  for (let i = 0; i < diagonalPatches; i++) {
+    // Pick a point along a diagonal (in first half)
+    const offset = randInt(rng, 2, center - 1);
+    const positions: [number, number][] = [
+      [offset, offset],
+      [offset, size - 1 - offset],
+    ];
+
+    const [r, c] = positions[Math.floor(rng() * positions.length)];
+
+    if (distFromCenter(r, c, size) >= protectionRadius && playable[r][c]) {
+      playable[r][c] = false;
+      const [mr, mc] = getRotatedPosition(r, c, size);
+      if (mr !== r || mc !== c) {
+        playable[mr][mc] = false;
+      }
+    }
+  }
+
+  ensureConnectivity(playable, size);
+  return playable;
+}
+
+// Scattered archetype: Random interior holes
+function generateScatteredBoard(rng: () => number, size: number): boolean[][] {
+  const playable: boolean[][] = Array(size)
+    .fill(null)
+    .map(() => Array(size).fill(true));
+
+  const protectionRadius = BOARD_SYMMETRY.centerProtectionRadius;
+
+  // Add small dead patches throughout (1-2 cells each)
+  const numPatches = randInt(rng, 4, 7);
+
+  // Collect candidate positions (interior cells in first half)
+  const candidates: [number, number][] = [];
+  for (let r = 1; r < size - 1; r++) {
+    for (let c = 1; c < size - 1; c++) {
+      if (isInFirstHalf(r, c, size) && distFromCenter(r, c, size) >= protectionRadius) {
+        candidates.push([r, c]);
+      }
+    }
+  }
+
+  const shuffled = shuffle(rng, candidates);
+  let patchesPlaced = 0;
+
+  for (const [r, c] of shuffled) {
+    if (patchesPlaced >= numPatches) break;
+    if (!playable[r][c]) continue;
+
+    // Check if placement would leave neighbors accessible
+    let hasAccessibleNeighbor = false;
+    for (const [nr, nc] of getNeighbors(r, c, size)) {
+      if (playable[nr][nc] && distFromCenter(nr, nc, size) < protectionRadius) {
+        hasAccessibleNeighbor = true;
+        break;
+      }
+    }
+    if (hasAccessibleNeighbor) continue;
+
+    playable[r][c] = false;
+    const [mr, mc] = getRotatedPosition(r, c, size);
+    if (mr !== r || mc !== c) {
+      playable[mr][mc] = false;
+    }
+
+    // Optionally expand to adjacent cell
+    if (rng() < 0.3) {
+      const neighbors = getNeighbors(r, c, size).filter(
+        ([nr, nc]) => playable[nr][nc] &&
+                      distFromCenter(nr, nc, size) >= protectionRadius &&
+                      isInFirstHalf(nr, nc, size)
+      );
+      if (neighbors.length > 0) {
+        const [nr, nc] = neighbors[Math.floor(rng() * neighbors.length)];
+        playable[nr][nc] = false;
+        const [mnr, mnc] = getRotatedPosition(nr, nc, size);
+        if (mnr !== nr || mnc !== nc) {
+          playable[mnr][mnc] = false;
+        }
+      }
+    }
+
+    patchesPlaced++;
+  }
+
+  // Add small corner cuts
+  const cornerSize = randInt(rng, 0, 1);
+  for (let r = 0; r <= cornerSize; r++) {
+    for (let c = 0; c <= cornerSize - r; c++) {
+      playable[r][c] = false;
+      playable[r][size - 1 - c] = false;
+      playable[size - 1 - r][c] = false;
+      playable[size - 1 - r][size - 1 - c] = false;
+    }
+  }
+
+  ensureConnectivity(playable, size);
+  return playable;
+}
+
+// Open archetype: Minimal dead space, mostly open board
+function generateOpenBoard(rng: () => number, size: number): boolean[][] {
+  const playable: boolean[][] = Array(size)
+    .fill(null)
+    .map(() => Array(size).fill(true));
+
+  // Only cut small corners
+  const cornerSize = randInt(rng, 1, 2);
+
+  for (let r = 0; r < cornerSize; r++) {
+    for (let c = 0; c < cornerSize - r; c++) {
+      playable[r][c] = false;
+      playable[r][size - 1 - c] = false;
+      playable[size - 1 - r][c] = false;
+      playable[size - 1 - r][size - 1 - c] = false;
+    }
+  }
+
+  // Optionally add 1-2 scattered dead cells
+  if (rng() < 0.4) {
+    const protectionRadius = BOARD_SYMMETRY.centerProtectionRadius;
+    const candidates: [number, number][] = [];
+
+    for (let r = 1; r < size - 1; r++) {
+      for (let c = 1; c < size - 1; c++) {
+        if (isInFirstHalf(r, c, size) &&
+            distFromCenter(r, c, size) >= protectionRadius &&
+            playable[r][c]) {
+          candidates.push([r, c]);
+        }
+      }
+    }
+
+    if (candidates.length > 0) {
+      const [r, c] = candidates[Math.floor(rng() * candidates.length)];
+      playable[r][c] = false;
+      const [mr, mc] = getRotatedPosition(r, c, size);
+      if (mr !== r || mc !== c) {
+        playable[mr][mc] = false;
+      }
+    }
+  }
+
+  ensureConnectivity(playable, size);
+  return playable;
+}
+
+// ============ MAIN BOARD SHAPE GENERATOR ============
+
+// Result type for board generation
+interface BoardShapeResult {
+  playable: boolean[][];
+  archetype: BoardArchetype;
+}
+
+// Generate the board shape by selecting and dispatching to a random archetype
+function generateBoardShape(rng: () => number, size: number): BoardShapeResult {
+  // Select a random archetype
+  const archetypeIndex = Math.floor(rng() * BOARD_ARCHETYPES.length);
+  const archetype: BoardArchetype = BOARD_ARCHETYPES[archetypeIndex];
+
+  // Dispatch to the appropriate generator
+  let playable: boolean[][];
+  switch (archetype) {
+    case 'corridor':
+      playable = generateCorridorBoard(rng, size);
+      break;
+    case 'islands':
+      playable = generateIslandsBoard(rng, size);
+      break;
+    case 'diagonal':
+      playable = generateDiagonalBoard(rng, size);
+      break;
+    case 'scattered':
+      playable = generateScatteredBoard(rng, size);
+      break;
+    case 'open':
+      playable = generateOpenBoard(rng, size);
+      break;
+    case 'classic':
+    default:
+      playable = generateClassicBoard(rng, size);
+      break;
+  }
+
+  return { playable, archetype };
 }
 
 // Calculate edge distance (how close to the edge of playable area)
@@ -228,7 +621,7 @@ function scorePosition(
   return normalizedEdge * edgePreference + (1 - normalizedEdge) * (1 - edgePreference);
 }
 
-// Place bonus squares on the board with strategic placement and symmetry
+// Place bonus squares on the board with balanced distribution
 function placeBonuses(
   rng: () => number,
   playable: boolean[][],
@@ -245,10 +638,27 @@ function placeBonuses(
   bonuses[centerR][centerC] = 'START';
 
   // Manhattan distance from center
-  const distFromCenter = (r: number, c: number) =>
+  const distFromCenterFn = (r: number, c: number) =>
     Math.abs(r - centerR) + Math.abs(c - centerC);
 
-  // Get valid positions for bonus placement (only first half for symmetry)
+  // Track placement balance for each bonus type
+  // We track: top vs bottom, left vs right (for overall balance)
+  const balanceTracker: Record<string, { top: number; bottom: number; left: number; right: number }> = {
+    TW: { top: 0, bottom: 0, left: 0, right: 0 },
+    DW: { top: 0, bottom: 0, left: 0, right: 0 },
+    TL: { top: 0, bottom: 0, left: 0, right: 0 },
+    DL: { top: 0, bottom: 0, left: 0, right: 0 },
+  };
+
+  // Get position's half-board attributes
+  const getHalves = (r: number, c: number): { isTop: boolean; isLeft: boolean } => {
+    return {
+      isTop: r < centerR,
+      isLeft: c < centerC,
+    };
+  };
+
+  // Get valid positions for bonus placement
   const getValidPositions = (bonusType: keyof typeof BONUS_PLACEMENT): [number, number][] => {
     const config = BONUS_PLACEMENT[bonusType];
     const positions: [number, number][] = [];
@@ -260,26 +670,18 @@ function placeBonuses(
         if (r === centerR && c === centerC) continue;
         if (bonuses[r][c] !== null) continue;
 
-        // Only consider first half for symmetric placement
-        if (!isInFirstHalf(r, c, size)) continue;
-
         // Check minimum distance from center
-        if (distFromCenter(r, c) < config.minDistFromCenter) continue;
+        if (distFromCenterFn(r, c) < config.minDistFromCenter) continue;
 
         // Check adjacent bonus constraint
         if (!config.allowAdjacent && hasAdjacentBonus(r, c, bonuses, size)) continue;
-
-        // Also check that the mirrored position is valid
-        const [mr, mc] = getRotatedPosition(r, c, size);
-        if (!playable[mr][mc]) continue;
-        if (bonuses[mr][mc] !== null) continue;
-        if (!config.allowAdjacent && hasAdjacentBonus(mr, mc, bonuses, size)) continue;
 
         positions.push([r, c]);
       }
     }
 
-    return positions;
+    // IMPORTANT: Shuffle positions to remove top-left iteration bias
+    return shuffle(rng, positions);
   };
 
   // Place bonuses in order: TW → DW → TL → DL (rarest first)
@@ -288,25 +690,57 @@ function placeBonuses(
   for (const bonusType of bonusTypes) {
     const config = BONUS_PLACEMENT[bonusType];
     const count = BOARD_CONFIG.bonusCounts[bonusType];
-    // We place in pairs (symmetric), so we need count/2 positions
-    const pairsNeeded = Math.ceil(count / 2);
+    const tracker = balanceTracker[bonusType];
 
-    for (let i = 0; i < pairsNeeded; i++) {
+    // Place each bonus individually with balance tracking
+    for (let i = 0; i < count; i++) {
       const validPositions = getValidPositions(bonusType);
       if (validPositions.length === 0) break;
 
-      // Score positions and select based on preference
-      const scoredPositions = validPositions.map(([r, c]) => ({
-        pos: [r, c] as [number, number],
-        score: scorePosition(r, c, size, centerR, centerC, config.edgePreference),
-      }));
+      // Score positions with edge preference AND balance bonuses
+      const scoredPositions = validPositions.map(([r, c]) => {
+        const baseScore = scorePosition(r, c, size, centerR, centerC, config.edgePreference);
+        const halves = getHalves(r, c);
 
-      // Sort by score (descending) and add some randomness
+        // Calculate balance bonus: strongly prefer under-represented halves
+        // This ensures top/bottom and left/right are balanced
+        let balanceBonus = 0;
+
+        // Vertical balance (top vs bottom)
+        if (halves.isTop && tracker.top > tracker.bottom) {
+          balanceBonus -= 1.0; // Penalize top if top is over-represented
+        } else if (!halves.isTop && tracker.bottom > tracker.top) {
+          balanceBonus -= 1.0; // Penalize bottom if bottom is over-represented
+        } else if (halves.isTop && tracker.top < tracker.bottom) {
+          balanceBonus += 0.8; // Boost top if top is under-represented
+        } else if (!halves.isTop && tracker.bottom < tracker.top) {
+          balanceBonus += 0.8; // Boost bottom if bottom is under-represented
+        }
+
+        // Horizontal balance (left vs right)
+        if (halves.isLeft && tracker.left > tracker.right) {
+          balanceBonus -= 0.5;
+        } else if (!halves.isLeft && tracker.right > tracker.left) {
+          balanceBonus -= 0.5;
+        } else if (halves.isLeft && tracker.left < tracker.right) {
+          balanceBonus += 0.4;
+        } else if (!halves.isLeft && tracker.right < tracker.left) {
+          balanceBonus += 0.4;
+        }
+
+        return {
+          pos: [r, c] as [number, number],
+          score: baseScore + balanceBonus,
+          halves,
+        };
+      });
+
+      // Sort by score (descending)
       scoredPositions.sort((a, b) => b.score - a.score);
 
       // Pick from top candidates with weighted random selection
       const topN = Math.min(5, scoredPositions.length);
-      const weights = scoredPositions.slice(0, topN).map((p, idx) => Math.pow(0.6, idx));
+      const weights = scoredPositions.slice(0, topN).map((_, idx) => Math.pow(0.5, idx));
       const totalWeight = weights.reduce((a, b) => a + b, 0);
 
       let pick = rng() * totalWeight;
@@ -319,14 +753,15 @@ function placeBonuses(
         }
       }
 
-      const [r, c] = scoredPositions[selectedIdx].pos;
+      const selected = scoredPositions[selectedIdx];
+      const [r, c] = selected.pos;
       bonuses[r][c] = bonusType;
 
-      // Place symmetric counterpart
-      const [mr, mc] = getRotatedPosition(r, c, size);
-      if (mr !== r || mc !== c) {
-        bonuses[mr][mc] = bonusType;
-      }
+      // Update balance tracker
+      if (selected.halves.isTop) tracker.top++;
+      else tracker.bottom++;
+      if (selected.halves.isLeft) tracker.left++;
+      else tracker.right++;
     }
   }
 
@@ -361,6 +796,33 @@ function isPlayable(letters: string[]): boolean {
   const twoLetterCount = countFormableWords(letters, COMMON_2_LETTER_WORDS);
   const threeLetterCount = countFormableWords(letters, COMMON_3_LETTER_WORDS);
   return twoLetterCount >= 3 && threeLetterCount >= 2;
+}
+
+// Check if at least one 5+ letter word can be formed
+function canFormAnyLongWord(letters: string[]): boolean {
+  return COMMON_LONG_WORDS.some(word => canFormWord(letters, word));
+}
+
+// Check if difficult letter rules are satisfied
+function meetsDifficultLetterRules(letters: string[]): boolean {
+  // Count difficult letters - max 1 allowed
+  const difficultCount = letters.filter(l => DIFFICULT_LETTERS.includes(l)).length;
+  if (difficultCount > 1) return false;
+
+  // Check if each difficult letter has its required companions
+  for (const letter of letters) {
+    const rules = DIFFICULT_LETTER_RULES[letter];
+    if (rules && rules.requires.length > 0) {
+      // Check that all required letters are present
+      for (const required of rules.requires) {
+        if (!letters.includes(required)) {
+          return false;
+        }
+      }
+    }
+  }
+
+  return true;
 }
 
 // Check if letters meet all constraints
@@ -403,7 +865,7 @@ function generateLetters(rng: () => number): string[] {
     }
   }
 
-  const maxAttempts = 50;
+  const maxAttempts = 100; // Increased from 50 to accommodate stricter rules
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const shuffledVowels = shuffle(rng, [...vowelPool]);
@@ -450,19 +912,33 @@ function generateLetters(rng: () => number): string[] {
       }
     }
 
-    // Check constraints and playability
-    if (meetsConstraints(drawn) && isPlayable(drawn)) {
-      return sortLetters(drawn);
-    }
+    // Check all constraints:
+    // 1. Basic constraints (vowels, unique letters, duplicates)
+    if (!meetsConstraints(drawn)) continue;
+
+    // 2. Difficult letter rules (max 1 difficult, Q requires U)
+    if (!meetsDifficultLetterRules(drawn)) continue;
+
+    // 3. Basic playability (can form 2 and 3 letter words)
+    if (!isPlayable(drawn)) continue;
+
+    // 4. Can form at least one 5+ letter word
+    if (!canFormAnyLongWord(drawn)) continue;
+
+    return sortLetters(drawn);
   }
 
   // Fallback: pre-validated letter sets that are known to be playable
+  // These sets have no difficult letters and can form multiple long words
   const fallbackSets = [
     ['A', 'E', 'I', 'O', 'U', 'B', 'C', 'D', 'G', 'L', 'N', 'R', 'S', 'T'],
     ['A', 'E', 'I', 'O', 'C', 'D', 'F', 'H', 'L', 'M', 'N', 'R', 'S', 'T'],
-    ['A', 'E', 'I', 'U', 'B', 'D', 'G', 'K', 'L', 'N', 'P', 'R', 'S', 'T'],
+    ['A', 'E', 'I', 'U', 'B', 'D', 'G', 'L', 'M', 'N', 'P', 'R', 'S', 'T'],
     ['A', 'E', 'O', 'U', 'C', 'D', 'H', 'L', 'M', 'N', 'P', 'R', 'S', 'W'],
     ['A', 'E', 'I', 'O', 'B', 'D', 'F', 'G', 'L', 'N', 'R', 'S', 'T', 'Y'],
+    ['A', 'E', 'I', 'O', 'C', 'G', 'H', 'L', 'N', 'P', 'R', 'S', 'T', 'W'],
+    ['A', 'E', 'I', 'U', 'B', 'C', 'D', 'L', 'M', 'N', 'R', 'S', 'T', 'W'],
+    ['A', 'E', 'O', 'U', 'B', 'C', 'D', 'G', 'L', 'N', 'R', 'S', 'T', 'Y'],
   ];
 
   const fallbackIdx = Math.floor(rng() * fallbackSets.length);
@@ -470,8 +946,13 @@ function generateLetters(rng: () => number): string[] {
 }
 
 // Generate a complete game board
-function generateBoard(rng: () => number): GameBoard {
-  const playable = generateBoardShape(rng, BOARD_SIZE);
+interface BoardResult {
+  board: GameBoard;
+  archetype: BoardArchetype;
+}
+
+function generateBoard(rng: () => number): BoardResult {
+  const { playable, archetype } = generateBoardShape(rng, BOARD_SIZE);
   const bonuses = placeBonuses(rng, playable, BOARD_SIZE);
 
   const cells: Cell[][] = Array(BOARD_SIZE)
@@ -489,13 +970,17 @@ function generateBoard(rng: () => number): GameBoard {
         }))
     );
 
-  return { cells, size: BOARD_SIZE };
+  return { board: { cells, size: BOARD_SIZE }, archetype };
 }
 
-// Get today's date string in YYYY-MM-DD format
+// Get today's date string in YYYY-MM-DD format (Pacific time)
 export function getTodayDateString(): string {
   const now = new Date();
-  return now.toISOString().split('T')[0];
+  // Format date in Pacific time
+  const pacificDate = now.toLocaleDateString('en-CA', {
+    timeZone: 'America/Los_Angeles',
+  });
+  return pacificDate; // Returns YYYY-MM-DD format
 }
 
 // Generate the daily puzzle
@@ -504,7 +989,7 @@ export function generateDailyPuzzle(dateString?: string): DailyPuzzle {
   const seed = Date.parse(date);
   const rng = createRng(date);
 
-  const board = generateBoard(rng);
+  const { board, archetype } = generateBoard(rng);
   const letters = generateLetters(rng);
 
   return {
@@ -512,10 +997,28 @@ export function generateDailyPuzzle(dateString?: string): DailyPuzzle {
     board,
     letters,
     seed,
+    archetype,
   };
 }
 
 // Get puzzle for a specific date (useful for testing)
 export function getPuzzleForDate(dateString: string): DailyPuzzle {
   return generateDailyPuzzle(dateString);
+}
+
+// Generate a random puzzle (for debug mode)
+export function generateRandomPuzzle(): DailyPuzzle {
+  const randomSeed = `debug-${Date.now()}-${Math.random()}`;
+  const rng = createRng(randomSeed);
+
+  const { board, archetype } = generateBoard(rng);
+  const letters = generateLetters(rng);
+
+  return {
+    date: `Debug #${Date.now().toString(36).slice(-6).toUpperCase()}`,
+    board,
+    letters,
+    seed: Date.now(),
+    archetype,
+  };
 }
